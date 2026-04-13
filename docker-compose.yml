@@ -1,0 +1,89 @@
+services:
+  nexus-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: moe-nexus-api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://nexus:${POSTGRES_PASSWORD}@nexus-db:5432/nexus
+      - NEO4J_URI=bolt://nexus-graph:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - VALKEY_URL=redis://nexus-valkey:6379/0
+      - REGISTRY_REPO_URL=${REGISTRY_REPO_URL:-https://github.com/moe-sovereign/moe-nexus-registry.git}
+      - REGISTRY_SYNC_INTERVAL=${REGISTRY_SYNC_INTERVAL:-3600}
+      - NEXUS_NODE_ID=${NEXUS_NODE_ID}
+      - NEXUS_PUBLIC_URL=${NEXUS_PUBLIC_URL}
+      - NEXUS_ADMIN_KEY=${NEXUS_ADMIN_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - registry-cache:/app/registry-cache
+    depends_on:
+      nexus-db:
+        condition: service_healthy
+      nexus-graph:
+        condition: service_started
+      nexus-valkey:
+        condition: service_healthy
+    networks:
+      - nexus-internal
+
+  nexus-db:
+    image: postgres:16-alpine
+    container_name: moe-nexus-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=nexus
+      - POSTGRES_USER=nexus
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexus"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - nexus-internal
+
+  nexus-graph:
+    image: neo4j:5-community
+    container_name: moe-nexus-graph
+    restart: unless-stopped
+    environment:
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD}
+      - NEO4J_PLUGINS=[]
+      - NEO4J_server_memory_heap_initial__size=256m
+      - NEO4J_server_memory_heap_max__size=512m
+    volumes:
+      - neo4jdata:/data
+    networks:
+      - nexus-internal
+
+  nexus-valkey:
+    image: valkey/valkey:8-alpine
+    container_name: moe-nexus-valkey
+    restart: unless-stopped
+    command: valkey-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - valkeydata:/data
+    networks:
+      - nexus-internal
+
+volumes:
+  pgdata:
+  neo4jdata:
+  valkeydata:
+  registry-cache:
+
+networks:
+  nexus-internal:
+    driver: bridge
