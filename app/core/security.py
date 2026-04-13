@@ -1,5 +1,7 @@
 """Authentication and authorization utilities."""
 
+import hmac
+
 from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import APIKeyHeader
 
@@ -45,7 +47,7 @@ async def require_admin(
     admin_key: str | None = Security(admin_key_header),
 ) -> bool:
     """Validate the admin key for management endpoints."""
-    if not admin_key or admin_key != settings.libris_admin_key:
+    if not admin_key or not hmac.compare_digest(admin_key, settings.libris_admin_key):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid or missing admin key",

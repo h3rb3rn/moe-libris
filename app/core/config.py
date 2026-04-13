@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     llm_triage_endpoint: str = ""
     llm_triage_model: str = ""
 
+    # CORS
+    cors_origins: str = "*"  # Comma-separated origins, or "*" for dev
+
     # Logging
     log_level: str = "info"
 

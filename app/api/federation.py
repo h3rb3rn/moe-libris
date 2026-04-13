@@ -13,7 +13,7 @@ from app.db.models import FederationNode
 from app.db.session import get_session
 from app.models.schemas import (
     HandshakeConfirm, HandshakeRequest, KnowledgeBundle,
-    PullResponse, PushRequest, PushResponse,
+    KnowledgeDomain, PullResponse, PushRequest, PushResponse,
 )
 from app.services import abuse, graph, pre_audit
 
@@ -78,7 +78,7 @@ async def push_knowledge(
     entry = await crud.create_audit_entry(
         session,
         origin_node_id=node.node_id,
-        bundle_data=bundle.model_dump(by_alias=True),
+        bundle_data=bundle.model_dump(by_alias=True, mode="json"),
         triple_count=len(bundle.relations),
         entity_count=len(bundle.entities),
         syntax_ok=result.syntax_ok,
@@ -87,6 +87,8 @@ async def push_knowledge(
         pre_audit_notes="; ".join(result.notes) if result.notes else None,
     )
 
+    # Update node activity tracking
+    await crud.update_node_last_seen(session, node.node_id)
     await crud.increment_node_push_stats(session, node.node_id, accepted=0, rejected=0)
     await crud.log_sync(
         session, node.node_id, "push",
@@ -122,6 +124,16 @@ async def pull_knowledge(
     domain_list = domains.split(",") if domains else None
     limit = min(limit, 10000)
 
+    # Validate domain strings against KnowledgeDomain enum values
+    if domain_list:
+        valid_domains = {d.value for d in KnowledgeDomain}
+        invalid = [d for d in domain_list if d not in valid_domains]
+        if invalid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid domain(s): {', '.join(invalid)}",
+            )
+
     result = await graph.pull_since(
         since=last_sync,
         domains=domain_list,
@@ -143,7 +155,7 @@ async def pull_knowledge(
         origin_node_id=settings.libris_node_id,
         pushed_at=datetime.now(timezone.utc),
         entities=result.get("entities", []),
-        relations=[],
+        relations=result.get("relations", []),
         syntheses=[],
     )
 
@@ -163,6 +175,9 @@ async def request_handshake(
 
     This registers the remote node as PENDING. An admin must accept
     the handshake via the audit API before sync can begin.
+
+    TODO: Add rate limiting via middleware (e.g. slowapi) to prevent
+    handshake flooding from unauthenticated sources.
     """
     # Check if node already exists
     existing = await crud.get_node_by_id(session, request.node_id)

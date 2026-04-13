@@ -48,6 +48,10 @@ class FederationNode(Base):
         String(16), default="remote"
     )  # remote, local
 
+    # Version tracking
+    version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # Abuse prevention
     is_blocked: Mapped[bool] = mapped_column(Boolean, default=False)
     block_reason: Mapped[str | None] = mapped_column(Text, nullable=True)

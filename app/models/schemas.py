@@ -56,9 +56,9 @@ class KnowledgeBundle(BaseModel):
     )
     origin_node_id: str = Field(..., max_length=64)
     pushed_at: datetime
-    entities: list[dict[str, Any]] = Field(default_factory=list)
-    relations: list[Triple] = Field(default_factory=list)
-    syntheses: list[dict[str, Any]] = Field(default_factory=list)
+    entities: list[dict[str, Any]] = Field(default_factory=list, max_length=5000)
+    relations: list[Triple] = Field(default_factory=list, max_length=5000)
+    syntheses: list[dict[str, Any]] = Field(default_factory=list, max_length=1000)
 
     model_config = {"populate_by_name": True}
 
@@ -151,6 +151,8 @@ class NodeInfo(BaseModel):
     domains: list[str]
     status: str  # active, rate_limited, blocked
     handshake_status: HandshakeStatus
+    version: str | None = None
+    last_seen_at: datetime | None = None
     strikes: int
     total_pushes: int
     total_triples_accepted: int
@@ -188,15 +190,24 @@ class RegistryListResponse(BaseModel):
 
 # ─── Stats ────────────────────────────────────────────────────────────────────
 
+class VersionCount(BaseModel):
+    """Version distribution entry."""
+    version: str
+    count: int
+
+
 class LibrisStats(BaseModel):
     """Global Libris server statistics."""
     node_id: str
     total_nodes: int
     active_nodes: int
     blocked_nodes: int
+    pending_nodes: int
     pending_audits: int
     approved_triples: int
     approved_entities: int
     total_pushes: int
     total_pulls: int
+    version_distribution: list[VersionCount] = []
+    recently_active_nodes: int = 0  # nodes seen in last 24h
     uptime_seconds: float

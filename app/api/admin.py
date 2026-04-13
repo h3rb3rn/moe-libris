@@ -1,10 +1,16 @@
 """Admin endpoints: audit queue, node management, stats, registry."""
 
 import asyncio
+import logging
 import secrets
+from collections import Counter
+from datetime import datetime, timedelta, timezone
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger("libris.admin")
 
 from app.core.security import require_admin
 from app.db import crud
@@ -12,6 +18,7 @@ from app.db.session import get_session
 from app.models.schemas import (
     AuditDecision, AuditEntry, AuditQueueResponse,
     NodeInfo, NodeListResponse, LibrisStats, RegistryListResponse,
+    VersionCount,
 )
 from app.services import abuse, graph, registry
 from app.core.config import settings
@@ -96,12 +103,19 @@ async def approve_entry(
     if entry.status != "pending":
         raise HTTPException(status_code=400, detail=f"Entry is already {entry.status}")
 
-    # Commit to Neo4j
-    commit_stats = await graph.commit_bundle(
-        entry.bundle_data, entry.origin_node_id,
-    )
+    # Commit to Neo4j first — only mark as approved if this succeeds
+    try:
+        commit_stats = await graph.commit_bundle(
+            entry.bundle_data, entry.origin_node_id,
+        )
+    except Exception as e:
+        logger.error("Neo4j commit failed for audit entry %s: %s", entry_id, e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to commit to graph: {e}",
+        )
 
-    # Mark as approved in database
+    # Mark as approved in database (only reached if Neo4j commit succeeded)
     await crud.approve_audit_entry(session, entry_id, reviewed_by="admin")
 
     # Update node stats
@@ -158,6 +172,8 @@ async def list_nodes(session: AsyncSession = Depends(get_session)):
             domains=n.domains or [],
             status=node_status,
             handshake_status=n.handshake_status,
+            version=n.version,
+            last_seen_at=n.last_seen_at,
             strikes=total_strikes,
             total_pushes=n.total_pushes,
             total_triples_accepted=n.total_triples_accepted,
@@ -188,9 +204,22 @@ async def accept_node_handshake(
     api_key = f"lbk-{secrets.token_hex(24)}"
     await crud.accept_handshake(session, node_id, api_key)
 
+    # Fetch version from remote node's verify endpoint
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as hc:
+            verify_resp = await hc.get(f"{node.url.rstrip('/')}/v1/federation/verify")
+            if verify_resp.status_code == 200:
+                verify_data = verify_resp.json()
+                node.version = verify_data.get("version")
+                node.last_seen_at = datetime.now(timezone.utc)
+                await session.commit()
+    except Exception:
+        pass  # Version fetch is best-effort
+
     return {
         "status": "accepted",
         "api_key": api_key,
+        "version": node.version,
         "message": "Share this API key with the remote node operator.",
     }
 
@@ -258,19 +287,43 @@ async def sync_registry_now():
 
 @router.get("/stats", response_model=LibrisStats)
 async def get_stats(session: AsyncSession = Depends(get_session)):
-    """Get Libris server statistics."""
+    """Get Libris server statistics with version distribution."""
     db_stats = await crud.get_stats(session)
     graph_stats = await graph.get_graph_stats()
+
+    # Version distribution and activity tracking
+    nodes = await crud.list_nodes(session)
+    version_counts = Counter(
+        n.version or "unknown" for n in nodes
+        if n.handshake_status == "accepted"
+    )
+    version_dist = [
+        VersionCount(version=v, count=c)
+        for v, c in sorted(version_counts.items())
+    ]
+
+    # Nodes active in last 24h
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    recently_active = sum(
+        1 for n in nodes
+        if n.last_seen_at and n.last_seen_at > cutoff
+    )
+
+    # Pending handshakes
+    pending_nodes = sum(1 for n in nodes if n.handshake_status == "pending")
 
     return LibrisStats(
         node_id=settings.libris_node_id,
         total_nodes=db_stats["total_nodes"],
         active_nodes=db_stats["active_nodes"],
         blocked_nodes=db_stats["blocked_nodes"],
+        pending_nodes=pending_nodes,
         pending_audits=db_stats["pending_audits"],
         approved_triples=graph_stats["approved_triples"],
         approved_entities=graph_stats["approved_entities"],
         total_pushes=0,
         total_pulls=0,
+        version_distribution=version_dist,
+        recently_active_nodes=recently_active,
         uptime_seconds=0,
     )

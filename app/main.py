@@ -84,13 +84,18 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS (configurable for MoE Admin UI integration)
+# CORS (configurable via CORS_ORIGINS env var)
+_cors_origins = (
+    [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+    if settings.cors_origins and settings.cors_origins != "*"
+    else ["*"]
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Restrict in production
+    allow_origins=_cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Admin-Key"],
 )
 
 # Register routers

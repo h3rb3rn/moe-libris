@@ -112,6 +112,16 @@ async def unblock_node(session: AsyncSession, node_id: str) -> None:
     await session.commit()
 
 
+async def update_node_last_seen(session: AsyncSession, node_id: str) -> None:
+    """Update the last_seen_at timestamp for a node."""
+    await session.execute(
+        update(FederationNode)
+        .where(FederationNode.node_id == node_id)
+        .values(last_seen_at=datetime.now(timezone.utc))
+    )
+    await session.commit()
+
+
 async def increment_node_push_stats(
     session: AsyncSession, node_id: str, accepted: int, rejected: int,
 ) -> None:
