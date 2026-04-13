@@ -11,7 +11,7 @@ from app.db import crud
 from app.db.session import get_session
 from app.models.schemas import (
     AuditDecision, AuditEntry, AuditQueueResponse,
-    NodeInfo, NodeListResponse, NexusStats, RegistryListResponse,
+    NodeInfo, NodeListResponse, LibrisStats, RegistryListResponse,
 )
 from app.services import abuse, graph, registry
 from app.core.config import settings
@@ -185,7 +185,7 @@ async def accept_node_handshake(
         )
 
     # Generate API key for the remote node
-    api_key = f"nxk-{secrets.token_hex(24)}"
+    api_key = f"lbk-{secrets.token_hex(24)}"
     await crud.accept_handshake(session, node_id, api_key)
 
     return {
@@ -238,7 +238,7 @@ async def unblock_node(
 
 @router.get("/registry", response_model=RegistryListResponse)
 async def list_registry_servers():
-    """List available servers from the moe-nexus-registry."""
+    """List available servers from the moe-libris-registry."""
     servers, last_synced = registry.get_cached_servers()
     return RegistryListResponse(servers=servers, last_synced=last_synced)
 
@@ -256,14 +256,14 @@ async def sync_registry_now():
 
 # ─── Statistics ───────────────────────────────────────────────────────────────
 
-@router.get("/stats", response_model=NexusStats)
+@router.get("/stats", response_model=LibrisStats)
 async def get_stats(session: AsyncSession = Depends(get_session)):
-    """Get Nexus server statistics."""
+    """Get Libris server statistics."""
     db_stats = await crud.get_stats(session)
     graph_stats = await graph.get_graph_stats()
 
-    return NexusStats(
-        node_id=settings.nexus_node_id,
+    return LibrisStats(
+        node_id=settings.libris_node_id,
         total_nodes=db_stats["total_nodes"],
         active_nodes=db_stats["active_nodes"],
         blocked_nodes=db_stats["blocked_nodes"],

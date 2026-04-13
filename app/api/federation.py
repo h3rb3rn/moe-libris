@@ -140,7 +140,7 @@ async def pull_knowledge(
     )
 
     bundle = KnowledgeBundle(
-        origin_node_id=settings.nexus_node_id,
+        origin_node_id=settings.libris_node_id,
         pushed_at=datetime.now(timezone.utc),
         entities=result.get("entities", []),
         relations=[],
@@ -159,7 +159,7 @@ async def request_handshake(
     request: HandshakeRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    """Receive a handshake request from a remote Nexus server.
+    """Receive a handshake request from a remote Libris server.
 
     This registers the remote node as PENDING. An admin must accept
     the handshake via the audit API before sync can begin.
@@ -208,13 +208,13 @@ async def confirm_handshake(
 
 @router.get("/verify")
 async def verify_instance():
-    """Verification endpoint for the moe-nexus-registry CI.
+    """Verification endpoint for the moe-libris-registry CI.
 
-    Returns instance metadata to prove this is a real Nexus server.
+    Returns instance metadata to prove this is a real Libris server.
     """
     return {
-        "nexus": True,
-        "node_id": settings.nexus_node_id,
+        "libris": True,
+        "node_id": settings.libris_node_id,
         "version": "1.0.0",
-        "public_url": settings.nexus_public_url,
+        "public_url": settings.libris_public_url,
     }

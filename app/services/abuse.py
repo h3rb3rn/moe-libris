@@ -25,7 +25,7 @@ async def close_valkey() -> None:
 
 def _strike_key(node_id: str, category: str = "general") -> str:
     """Redis key for strike counter."""
-    return f"nexus:strikes:{category}:{node_id}"
+    return f"libris:strikes:{category}:{node_id}"
 
 
 async def record_strike(node_id: str, category: str = "general") -> int:
@@ -87,7 +87,7 @@ async def clear_strikes(node_id: str) -> None:
 async def check_rate_limit(node_id: str) -> bool:
     """Check and enforce per-node rate limiting. Returns True if request is allowed."""
     vk = await get_valkey()
-    key = f"nexus:ratelimit:{node_id}"
+    key = f"libris:ratelimit:{node_id}"
 
     if await should_rate_limit(node_id):
         # Rate-limited nodes: 1 push per hour

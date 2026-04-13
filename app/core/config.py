@@ -4,10 +4,10 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    """Nexus server configuration."""
+    """Libris server configuration."""
 
     # Database
-    database_url: str = "postgresql+asyncpg://nexus:nexus@localhost:5432/nexus"
+    database_url: str = "postgresql+asyncpg://libris:libris@localhost:5432/libris"
 
     # Neo4j (Global Knowledge Graph)
     neo4j_uri: str = "bolt://localhost:7687"
@@ -18,12 +18,12 @@ class Settings(BaseSettings):
     valkey_url: str = "redis://localhost:6379/0"
 
     # Instance identity
-    nexus_node_id: str = ""
-    nexus_public_url: str = ""
-    nexus_admin_key: str = ""
+    libris_node_id: str = ""
+    libris_public_url: str = ""
+    libris_admin_key: str = ""
 
     # Registry (server discovery)
-    registry_repo_url: str = "https://github.com/moe-sovereign/moe-nexus-registry.git"
+    registry_repo_url: str = "https://github.com/moe-sovereign/moe-libris-registry.git"
     registry_sync_interval: int = 3600  # seconds
 
     # Abuse prevention

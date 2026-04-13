@@ -1,4 +1,4 @@
-"""Registry sync service — pulls server list from moe-nexus-registry Git repo."""
+"""Registry sync service — pulls server list from moe-libris-registry Git repo."""
 
 import json
 import logging

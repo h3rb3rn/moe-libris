@@ -1,13 +1,13 @@
-# MoE Nexus
+# MoE Libris
 
 **Federated Knowledge Exchange Hub for MoE Sovereign instances.**
 
-MoE Nexus is a lightweight federation server that enables secure, audited knowledge sharing between [MoE Sovereign](https://github.com/moe-sovereign/moe-infra) instances. Inspired by Fediverse architecture (ActivityPub/Friendica), it provides a hub-and-spoke model for exchanging knowledge graph triples via JSON-LD bundles.
+MoE Libris is a lightweight federation server that enables secure, audited knowledge sharing between [MoE Sovereign](https://github.com/moe-sovereign/moe-infra) instances. Inspired by Fediverse architecture (ActivityPub/Friendica), it provides a hub-and-spoke model for exchanging knowledge graph triples via JSON-LD bundles.
 
 ## Architecture
 
 ```
-MoE Sovereign A ──push──▶ MoE Nexus ◀──push── MoE Sovereign B
+MoE Sovereign A ──push──▶ MoE Libris ◀──push── MoE Sovereign B
                  ◀──pull──           ──pull──▶
 ```
 
@@ -17,7 +17,7 @@ MoE Sovereign A ──push──▶ MoE Nexus ◀──push── MoE Sovereign 
 - **Audit Queue** — Admin review before knowledge enters the global graph
 - **Abuse Prevention** — Graduated strike system with rate limiting (Valkey)
 - **Global Knowledge Graph** — Approved triples stored in Neo4j
-- **Server Discovery** — Decentralized via [moe-nexus-registry](https://github.com/moe-sovereign/moe-nexus-registry)
+- **Server Discovery** — Decentralized via [moe-libris-registry](https://github.com/moe-sovereign/moe-libris-registry)
 
 ## Quick Start
 

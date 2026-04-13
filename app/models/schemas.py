@@ -95,7 +95,7 @@ class PullResponse(BaseModel):
 # ─── Handshake (Node Pairing) ────────────────────────────────────────────────
 
 class HandshakeRequest(BaseModel):
-    """Initial handshake from a remote Nexus server."""
+    """Initial handshake from a remote Libris server."""
     node_id: str = Field(..., max_length=64)
     url: HttpUrl
     name: str = Field(..., max_length=128)
@@ -168,7 +168,7 @@ class NodeListResponse(BaseModel):
 # ─── Registry (Server Discovery) ─────────────────────────────────────────────
 
 class RegistryServer(BaseModel):
-    """A server entry from the moe-nexus-registry."""
+    """A server entry from the moe-libris-registry."""
     id: str
     name: str
     url: str
@@ -188,8 +188,8 @@ class RegistryListResponse(BaseModel):
 
 # ─── Stats ────────────────────────────────────────────────────────────────────
 
-class NexusStats(BaseModel):
-    """Global Nexus server statistics."""
+class LibrisStats(BaseModel):
+    """Global Libris server statistics."""
     node_id: str
     total_nodes: int
     active_nodes: int

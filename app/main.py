@@ -1,4 +1,4 @@
-"""MoE Nexus — Federated Knowledge Exchange Hub.
+"""MoE Libris — Federated Knowledge Exchange Hub.
 
 A lightweight federation server for secure, audited knowledge exchange
 between MoE Sovereign instances. Inspired by Fediverse architecture.
@@ -19,7 +19,7 @@ from app.services.abuse import close_valkey
 from app.services.graph import close_driver, init_schema
 from app.services.registry import sync_registry
 
-logger = logging.getLogger("nexus")
+logger = logging.getLogger("libris")
 
 _start_time: float = 0
 
@@ -46,8 +46,8 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(_periodic_registry_sync())
 
     logger.info(
-        "MoE Nexus started — node_id=%s, url=%s",
-        settings.nexus_node_id, settings.nexus_public_url,
+        "MoE Libris started — node_id=%s, url=%s",
+        settings.libris_node_id, settings.libris_public_url,
     )
 
     yield
@@ -72,7 +72,7 @@ async def _periodic_registry_sync():
 
 
 app = FastAPI(
-    title="MoE Nexus",
+    title="MoE Libris",
     description=(
         "Federated Knowledge Exchange Hub for MoE Sovereign instances. "
         "Provides secure, audited knowledge sharing via JSON-LD bundles "
@@ -102,9 +102,9 @@ app.include_router(admin.router)
 async def root():
     """Health check and instance info."""
     return {
-        "service": "moe-nexus",
+        "service": "moe-libris",
         "version": "1.0.0",
-        "node_id": settings.nexus_node_id,
+        "node_id": settings.libris_node_id,
         "status": "ok",
         "uptime_seconds": round(time.time() - _start_time, 1),
     }
@@ -115,6 +115,6 @@ async def health():
     """Detailed health check."""
     return {
         "status": "ok",
-        "node_id": settings.nexus_node_id,
+        "node_id": settings.libris_node_id,
         "uptime_seconds": round(time.time() - _start_time, 1),
     }

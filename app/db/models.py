@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM models for the Nexus database."""
+"""SQLAlchemy ORM models for the Libris database."""
 
 import uuid
 from datetime import datetime, timezone
@@ -26,7 +26,7 @@ def _uuid() -> str:
 # ─── Federation Nodes ─────────────────────────────────────────────────────────
 
 class FederationNode(Base):
-    """A registered federation peer (another Nexus or MoE Sovereign instance)."""
+    """A registered federation peer (another Libris or MoE Sovereign instance)."""
 
     __tablename__ = "federation_nodes"
 
