@@ -6,9 +6,16 @@ MoE Libris is a lightweight federation server that enables secure, audited knowl
 
 ## Architecture
 
-```
-MoE Sovereign A ──push──▶ MoE Libris ◀──push── MoE Sovereign B
-                 ◀──pull──           ──pull──▶
+```mermaid
+graph LR
+    A["MoE Sovereign A"] -->|push| Hub["MoE Libris Hub"]
+    B["MoE Sovereign B"] -->|push| Hub
+    Hub -->|pull| A
+    Hub -->|pull| B
+
+    subgraph Hub["MoE Libris Hub"]
+        PA["Pre-Audit"] --> AQ["Audit Queue"] --> GG["Global Graph"]
+    end
 ```
 
 **Core Components:**
