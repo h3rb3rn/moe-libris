@@ -119,20 +119,77 @@ fi
 
 echo "[4/4] Checking for leaked secrets..."
 
-SECRETS=$(grep -rn \
-  -e "moe-sk-[a-f0-9]\{40,\}" \
-  -e "lbk-[a-f0-9]\{40,\}" \
-  -e "password.*=.*[a-f0-9]\{20,\}" \
-  "$PUB_DIR" \
-  --include="*.py" --include="*.yml" --include="*.yaml" \
-  --include="*.json" --include="*.sh" --include="*.service" \
-  2>/dev/null | grep -v "\.git/" | grep -v "\.example" || true)
+# File types to scan — include common config formats and .env variants.
+SCAN_INCLUDES=(
+  --include='*.py' --include='*.yml' --include='*.yaml' --include='*.json'
+  --include='*.sh' --include='*.service' --include='*.toml' --include='*.ini'
+  --include='*.conf' --include='*.cfg' --include='*.env' --include='*.properties'
+  --include='Dockerfile*' --include='docker-compose*.yml'
+)
+
+# Exclusions: never flag fixture/example files or git internals.
+SCAN_EXCLUDES=(
+  --exclude-dir='.git'
+  --exclude-dir='node_modules'
+  --exclude-dir='__pycache__'
+  --exclude='*.example'
+  --exclude='*.sample'
+  --exclude='*.template'
+)
+
+# Credential patterns to detect. Each line: LABEL|REGEX (grep -E compatible).
+# We keep the matcher deliberately strict: must look like an assignment with
+# a non-placeholder value (>=12 chars, not "change-me", "your-key", etc).
+readonly CRED_PATTERNS=(
+  # Own API keys (hex-suffix format)
+  "MOE-SK|\\bmoe-sk-[a-f0-9]{32,}"
+  "LBK-ADMIN|\\blbk-[a-f0-9]{32,}"
+  # SMTP / email service credentials
+  "SMTP-PASS|^[[:space:]]*SMTP_PASS(WORD)?[[:space:]]*=[[:space:]]*[^[:space:]\"'\\\$#][[:graph:]]{7,}"
+  "SMTP-USER|^[[:space:]]*SMTP_USER[[:space:]]*=[[:space:]]*[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"
+  "MAIL-PASS|^[[:space:]]*(MAIL|EMAIL)_PASS(WORD)?[[:space:]]*=[[:space:]]*[^[:space:]\"'\\\$#][[:graph:]]{7,}"
+  "APP-PASSWORD|app[_-]password[[:space:]]*[:=][[:space:]]*['\"][A-Za-z0-9]{16,}['\"]"
+  # Third-party mail providers (canonical key prefixes)
+  "SENDGRID|SG\\.[A-Za-z0-9_-]{20,}\\.[A-Za-z0-9_-]{30,}"
+  "MAILGUN|key-[a-f0-9]{32}"
+  "POSTMARK|POSTMARK_(API|SERVER)_TOKEN[[:space:]]*=[[:space:]]*[0-9a-f-]{30,}"
+  "BREVO|xkeysib-[a-f0-9]{60,}"
+  "MAILJET|[A-Fa-f0-9]{32}-[A-Fa-f0-9]{32}.*(mailjet|MJ_APIKEY)"
+  # AWS (SES + generic)
+  "AWS-AKIA|(AKIA|ASIA)[A-Z0-9]{16}"
+  "AWS-SECRET|aws_secret_access_key[[:space:]]*=[[:space:]]*[A-Za-z0-9/+=]{40}"
+  # GitHub personal access tokens
+  "GH-PAT|gh[opsur]_[A-Za-z0-9]{36,251}"
+  "GH-CLASSIC|\\bghp_[A-Za-z0-9]{36}\\b"
+  # JWT-like base64 blobs
+  "JWT|\\beyJ[A-Za-z0-9_-]{10,}\\.eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\b"
+  # Generic high-entropy passwords in assignments (excludes placeholders)
+  "GENERIC-PASS|^[[:space:]]*[A-Z_][A-Z0-9_]*_?(PASS|PASSWORD|SECRET|TOKEN|KEY)[[:space:]]*=[[:space:]]*[A-Za-z0-9/+=_.!@#%^&*-]{16,}"
+)
+
+# Words that invalidate a match (case-insensitive): obvious placeholders.
+readonly PLACEHOLDER_RE='(change[-_]?me|your[-_]?(key|password|token|secret)|example|placeholder|dummy|changeit|xxxxxxxx|\\*\\*\\*|<[^>]*>|\\$\\{|REPLACE|TODO)'
+
+SECRETS=""
+for entry in "${CRED_PATTERNS[@]}"; do
+  label="${entry%%|*}"
+  pattern="${entry#*|}"
+  # shellcheck disable=SC2086
+  hits=$(grep -rInE "${pattern}" "${SCAN_INCLUDES[@]}" "${SCAN_EXCLUDES[@]}" "$PUB_DIR" 2>/dev/null \
+         | grep -viE "$PLACEHOLDER_RE" || true)
+  if [[ -n "$hits" ]]; then
+    SECRETS="${SECRETS}
+[$label]
+$hits"
+  fi
+done
 
 if [[ -n "$SECRETS" ]]; then
   echo "  ⚠️  WARNING: Potential real secrets found!"
-  echo "$SECRETS" | head -5
+  printf '%s\n' "$SECRETS" | head -30
   echo ""
   echo "  Fix these manually before pushing."
+  echo "  (rotate any exposed credential even after removing from the repo)"
 else
   echo "  No leaked secrets found ✓"
 fi
