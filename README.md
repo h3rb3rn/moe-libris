@@ -38,6 +38,13 @@ graph LR
     end
 ```
 
+**Security model:** Knowledge bundles are transmitted over mTLS (encrypted in transit).
+There is no end-to-end encryption — the Hub's Pre-Audit pipeline inspects the JSON-LD
+payload content, and a human Admin reviews bundles in the Audit Queue before graph merge.
+Privacy protection is handled at the *sender node* via the
+[Privacy Scrubber](https://docs.moe-sovereign.org/federation/trust/#privacy-scrubber)
+before the bundle ever leaves the originating instance.
+
 ## Stack
 
 FastAPI · PostgreSQL · Neo4j · Valkey · Docker
