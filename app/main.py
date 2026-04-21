@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import admin, federation
 from app.core.config import settings
+from app.core.security import assert_secrets_configured
 from app.db.session import close_db, init_db
 from app.services.abuse import close_valkey
 from app.services.graph import close_driver, init_schema
@@ -29,6 +30,10 @@ async def lifespan(app: FastAPI):
     """Application lifespan: initialize and teardown resources."""
     global _start_time
     _start_time = time.time()
+
+    # Fail fast if security-critical environment variables are missing.
+    # This prevents silent auth bypass from empty LIBRIS_ADMIN_KEY.
+    assert_secrets_configured()
 
     # Initialize database tables
     logger.info("Initializing database...")
@@ -84,16 +89,19 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS (configurable via CORS_ORIGINS env var)
-_cors_origins = (
-    [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
-    if settings.cors_origins and settings.cors_origins != "*"
-    else ["*"]
-)
+# CORS — allow_credentials must never be combined with a wildcard origin.
+# Browsers block credentialed cross-origin requests to wildcard origins anyway,
+# but setting both is a misconfiguration that could affect non-browser clients.
+_raw_origins = settings.cors_origins or ""
+_cors_origins = [o.strip() for o in _raw_origins.split(",") if o.strip() and o.strip() != "*"]
+_cors_wildcard = not _cors_origins  # true when list is empty or was "*"
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins,
-    allow_credentials=True,
+    allow_origins=["*"] if _cors_wildcard else _cors_origins,
+    # Credentials (cookies, Authorization headers) are only allowed when
+    # a specific origin list is configured — never with a wildcard origin.
+    allow_credentials=not _cors_wildcard,
     allow_methods=["GET", "POST"],
     allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Admin-Key"],
 )

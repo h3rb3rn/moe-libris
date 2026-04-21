@@ -6,18 +6,9 @@ from datetime import datetime, timezone
 from neo4j import AsyncGraphDatabase, AsyncDriver
 
 from app.core.config import settings
+from app.core.constants import ALLOWED_PREDICATES as VALID_PREDICATES
 
 logger = logging.getLogger("libris.graph")
-
-# Valid relationship predicates — must match pre_audit.py ALLOWED_PREDICATES
-VALID_PREDICATES = {
-    "IS_A", "PART_OF", "TREATS", "CAUSES", "INTERACTS_WITH",
-    "CONTRAINDICATES", "DEFINES", "REGULATES", "USES", "IMPLEMENTS",
-    "DEPENDS_ON", "EXTENDS", "RELATED_TO", "EQUIVALENT_TO", "AFFECTS",
-    "RUNS", "NECESSITATES_PRESENCE", "DEPENDS_ON_LOCATION", "ENABLES_ACTION",
-    "HAS_PROPERTY", "BELONGS_TO", "CONTAINS", "PRODUCES", "REQUIRES",
-    "SUPPORTS", "CONTRADICTS", "SUPERSEDES",
-}
 
 _driver: AsyncDriver | None = None
 
@@ -107,6 +98,9 @@ async def commit_bundle(bundle_data: dict, origin_node_id: str) -> dict:
                     )
                     continue
 
+                # Cypher relationship types cannot be parameterised with $param
+                # syntax — Neo4j requires the type as a literal in the query text.
+                # The VALID_PREDICATES check above is the security boundary.
                 result = await session.run(
                     f"""
                     MERGE (s:Entity {{name: $subject}})
