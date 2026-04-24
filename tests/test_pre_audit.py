@@ -47,18 +47,19 @@ class TestSyntaxValidation:
         assert any("origin_node_id" in n for n in notes)
 
     def test_too_many_triples_fails(self):
+        # Pydantic enforces MAX_BUNDLE_TRIPLES on KnowledgeBundle — constructing
+        # a bundle with >5000 items raises ValidationError before stage_1_syntax
+        # ever sees it. The schema and pre_audit both enforce the same limit.
+        import pydantic
         relations = [_triple(subject=f"E{i}") for i in range(MAX_BUNDLE_TRIPLES + 1)]
-        bundle = _bundle(relations=relations)
-        ok, notes = stage_1_syntax(bundle)
-        assert not ok
-        assert any("Too many triples" in n for n in notes)
+        with pytest.raises(pydantic.ValidationError, match="too_long"):
+            _bundle(relations=relations)
 
     def test_too_many_entities_fails(self):
+        import pydantic
         entities = [{"name": f"Entity{i}"} for i in range(MAX_BUNDLE_ENTITIES + 1)]
-        bundle = _bundle(entities=entities)
-        ok, notes = stage_1_syntax(bundle)
-        assert not ok
-        assert any("Too many entities" in n for n in notes)
+        with pytest.raises(pydantic.ValidationError, match="too_long"):
+            _bundle(entities=entities)
 
     def test_empty_subject_fails(self):
         bundle = _bundle(relations=[_triple(subject="")])

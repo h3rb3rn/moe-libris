@@ -3,6 +3,13 @@
 import re
 from dataclasses import dataclass
 
+from app.core.constants import (
+    ALLOWED_PREDICATES,
+    MAX_BUNDLE_ENTITIES,
+    MAX_BUNDLE_TRIPLES,
+    MAX_ENTITY_NAME_LEN,
+    MAX_TRIPLE_FIELD_LEN,
+)
 from app.models.schemas import KnowledgeBundle
 
 
@@ -18,21 +25,7 @@ _SENSITIVE_PATTERNS = [
     (re.compile(r"-----BEGIN (?:RSA |EC )?PRIVATE KEY-----"), "private key"),
 ]
 
-# Allowed relation predicates (whitelist)
-ALLOWED_PREDICATES = {
-    "IS_A", "PART_OF", "TREATS", "CAUSES", "INTERACTS_WITH",
-    "CONTRAINDICATES", "DEFINES", "REGULATES", "USES", "IMPLEMENTS",
-    "DEPENDS_ON", "EXTENDS", "RELATED_TO", "EQUIVALENT_TO", "AFFECTS",
-    "RUNS", "NECESSITATES_PRESENCE", "DEPENDS_ON_LOCATION", "ENABLES_ACTION",
-    "HAS_PROPERTY", "BELONGS_TO", "CONTAINS", "PRODUCES", "REQUIRES",
-    "SUPPORTS", "CONTRADICTS", "SUPERSEDES",
-}
-
-# Maximum allowed lengths
-MAX_ENTITY_NAME = 512
-MAX_TRIPLE_FIELD = 512
-MAX_BUNDLE_TRIPLES = 5000
-MAX_BUNDLE_ENTITIES = 5000
+# Constants imported from app.core.constants — do not redeclare here.
 
 
 @dataclass
@@ -59,9 +52,9 @@ def stage_1_syntax(bundle: KnowledgeBundle) -> tuple[bool, list[str]]:
         notes.append(f"Too many entities: {len(bundle.entities)} > {MAX_BUNDLE_ENTITIES}")
 
     for i, triple in enumerate(bundle.relations):
-        if len(triple.subject) > MAX_TRIPLE_FIELD:
+        if len(triple.subject) > MAX_TRIPLE_FIELD_LEN:
             notes.append(f"Triple {i}: subject too long ({len(triple.subject)} chars)")
-        if len(triple.object) > MAX_TRIPLE_FIELD:
+        if len(triple.object) > MAX_TRIPLE_FIELD_LEN:
             notes.append(f"Triple {i}: object too long ({len(triple.object)} chars)")
         if not triple.subject or not triple.object or not triple.predicate:
             notes.append(f"Triple {i}: empty subject, predicate, or object")
@@ -72,7 +65,7 @@ def stage_1_syntax(bundle: KnowledgeBundle) -> tuple[bool, list[str]]:
         name = entity.get("name", "")
         if not name:
             notes.append(f"Entity {i}: missing name")
-        if len(name) > MAX_ENTITY_NAME:
+        if len(name) > MAX_ENTITY_NAME_LEN:
             notes.append(f"Entity {i}: name too long ({len(name)} chars)")
 
     return len(notes) == 0, notes

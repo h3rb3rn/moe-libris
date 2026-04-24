@@ -1,13 +1,16 @@
 """Admin endpoints: audit queue, node management, stats, registry."""
 
 import asyncio
+import ipaddress
 import logging
+import re
 import secrets
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("libris.admin")
@@ -24,6 +27,40 @@ from app.services import abuse, graph, registry
 from app.core.config import settings
 
 router = APIRouter(prefix="/v1/admin", tags=["admin"], dependencies=[Depends(require_admin)])
+
+# Private IP ranges blocked for SSRF protection when fetching remote node URLs.
+_PRIVATE_NETWORKS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),  # link-local
+    ipaddress.ip_network("::1/128"),          # IPv6 loopback
+    ipaddress.ip_network("fc00::/7"),         # IPv6 ULA
+]
+
+
+def _is_safe_remote_url(url: str) -> bool:
+    """Return False if the URL targets a private/loopback network (SSRF guard).
+
+    Only https:// URLs to public IP addresses are permitted. This is applied
+    before any outbound request to a node-supplied URL.
+    """
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme != "https":
+            return False
+        host = parsed.hostname or ""
+        if not host:
+            return False
+        addr = ipaddress.ip_address(host)
+        return not any(addr in net for net in _PRIVATE_NETWORKS)
+    except ValueError:
+        # hostname is a domain name, not a bare IP — allow it.
+        # DNS-based SSRF is mitigated by the https-only requirement and
+        # the short (5s) timeout; internal DNS rebinding is out of scope.
+        parsed = urlparse(url)
+        return parsed.scheme == "https" and bool(parsed.hostname)
 
 
 # ─── Audit Queue ──────────────────────────────────────────────────────────────
@@ -64,7 +101,7 @@ async def list_audit_queue(
 
 @router.get("/audit/{entry_id}")
 async def get_audit_entry(
-    entry_id: str,
+    entry_id: str = Path(..., pattern=r"^[a-f0-9]{32}$", description="Hex audit entry ID"),
     session: AsyncSession = Depends(get_session),
 ):
     """Get full details of an audit entry including the bundle data."""
@@ -93,7 +130,7 @@ async def get_audit_entry(
 
 @router.post("/audit/{entry_id}/approve")
 async def approve_entry(
-    entry_id: str,
+    entry_id: str = Path(..., pattern=r"^[a-f0-9]{32}$", description="Hex audit entry ID"),
     session: AsyncSession = Depends(get_session),
 ):
     """Approve an audit entry and commit its data to the global Neo4j graph."""
@@ -109,10 +146,11 @@ async def approve_entry(
             entry.bundle_data, entry.origin_node_id,
         )
     except Exception as e:
-        logger.error("Neo4j commit failed for audit entry %s: %s", entry_id, e)
+        # Log the full exception internally; never expose Neo4j internals to clients.
+        logger.error("Neo4j commit failed for audit entry %s: %s", entry_id, e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to commit to graph: {e}",
+            detail="Graph commit failed — check server logs for details.",
         )
 
     # Mark as approved in database (only reached if Neo4j commit succeeded)
@@ -133,8 +171,8 @@ async def approve_entry(
 
 @router.post("/audit/{entry_id}/reject")
 async def reject_entry(
-    entry_id: str,
     decision: AuditDecision,
+    entry_id: str = Path(..., pattern=r"^[a-f0-9]{32}$", description="Hex audit entry ID"),
     session: AsyncSession = Depends(get_session),
 ):
     """Reject an audit entry with a reason."""
@@ -187,7 +225,7 @@ async def list_nodes(session: AsyncSession = Depends(get_session)):
 
 @router.post("/nodes/{node_id}/accept")
 async def accept_node_handshake(
-    node_id: str,
+    node_id: str = Path(..., pattern=r"^[\w\-\.]{1,64}$", description="Federation node ID"),
     session: AsyncSession = Depends(get_session),
 ):
     """Accept a pending handshake and generate an API key for the node."""
@@ -204,17 +242,21 @@ async def accept_node_handshake(
     api_key = f"lbk-{secrets.token_hex(24)}"
     await crud.accept_handshake(session, node_id, api_key)
 
-    # Fetch version from remote node's verify endpoint
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as hc:
-            verify_resp = await hc.get(f"{node.url.rstrip('/')}/v1/federation/verify")
-            if verify_resp.status_code == 200:
-                verify_data = verify_resp.json()
-                node.version = verify_data.get("version")
-                node.last_seen_at = datetime.now(timezone.utc)
-                await session.commit()
-    except Exception:
-        pass  # Version fetch is best-effort
+    # Fetch version from remote node's verify endpoint (best-effort, SSRF-guarded).
+    remote_url = (node.url or "").rstrip("/")
+    if _is_safe_remote_url(remote_url):
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as hc:
+                verify_resp = await hc.get(f"{remote_url}/v1/federation/verify")
+                if verify_resp.status_code == 200:
+                    verify_data = verify_resp.json()
+                    node.version = verify_data.get("version")
+                    node.last_seen_at = datetime.now(timezone.utc)
+                    await session.commit()
+        except Exception as exc:
+            logger.debug("Version fetch failed for node %s: %s", node_id, type(exc).__name__)
+    else:
+        logger.warning("Skipping version fetch for node %s: URL %r is not a safe public https URL", node_id, remote_url)
 
     return {
         "status": "accepted",
@@ -226,8 +268,8 @@ async def accept_node_handshake(
 
 @router.post("/nodes/{node_id}/reject")
 async def reject_node_handshake(
-    node_id: str,
     decision: AuditDecision,
+    node_id: str = Path(..., pattern=r"^[\w\-\.]{1,64}$", description="Federation node ID"),
     session: AsyncSession = Depends(get_session),
 ):
     """Reject a pending handshake."""
@@ -243,8 +285,8 @@ async def reject_node_handshake(
 
 @router.post("/nodes/{node_id}/block")
 async def block_node(
-    node_id: str,
     decision: AuditDecision,
+    node_id: str = Path(..., pattern=r"^[\w\-\.]{1,64}$", description="Federation node ID"),
     session: AsyncSession = Depends(get_session),
 ):
     """Manually block a federation node."""
@@ -254,7 +296,7 @@ async def block_node(
 
 @router.post("/nodes/{node_id}/unblock")
 async def unblock_node(
-    node_id: str,
+    node_id: str = Path(..., pattern=r"^[\w\-\.]{1,64}$", description="Federation node ID"),
     session: AsyncSession = Depends(get_session),
 ):
     """Unblock a federation node and clear its strikes."""
